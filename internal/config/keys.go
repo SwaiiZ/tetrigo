@@ -21,11 +21,11 @@ func DefaultKeys() *Keys {
 		ShowMatrix:             []string{"m"},
 		Help:                   []string{"?"},
 		Submit:                 []string{" ", "enter"},
-		Up:                     []string{"w"},
+		Up:                     []string{"z"},
 		Down:                   []string{"s"},
-		Left:                   []string{"a"},
+		Left:                   []string{"q"},
 		Right:                  []string{"d"},
-		RotateCounterClockwise: []string{"q"},
+		RotateCounterClockwise: []string{"a"},
 		RotateClockwise:        []string{"e"},
 	}
 }
