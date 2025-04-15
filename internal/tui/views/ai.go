@@ -77,7 +77,7 @@ func NewAIModel(
 			IncreaseLevel: true,
 			EndOnMaxLevel: cfg.EndOnMaxLevel,
 
-			GhostEnabled: cfg.GhostEnabled,
+			GhostEnabled: !cfg.GhostEnabled,
 		}
 		m.gameStopwatch = components.NewStopwatchWithInterval(timerUpdateInterval)
 
