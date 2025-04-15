@@ -63,6 +63,7 @@ func NewMenuModel(_ *tui.MenuInput) *MenuModel {
 						huh.NewOption("Marathon", tui.ModeMarathon),
 						huh.NewOption("Sprint (40 Lines)", tui.ModeSprint),
 						huh.NewOption("Ultra (Time Trial)", tui.ModeUltra),
+						huh.NewOption("AI", tui.ModeAI),
 					),
 				huh.NewSelect[int]().Value(&formData.Level).
 					Title("Starting Level:").
@@ -114,7 +115,9 @@ func (m *MenuModel) announceCompletion() tea.Cmd {
 	case tui.ModeMarathon, tui.ModeSprint, tui.ModeUltra:
 		in := tui.NewSingleInput(m.formData.GameMode, m.formData.Level, m.formData.Username)
 		return tui.SwitchModeCmd(m.formData.GameMode, in)
-
+	case tui.ModeAI:
+		in := tui.NewNoInput(m.formData.GameMode, m.formData.Level, m.formData.Username)
+		return tui.SwitchModeCmd(m.formData.GameMode, in)
 	case tui.ModeMenu, tui.ModeLeaderboard:
 		fallthrough
 	default:

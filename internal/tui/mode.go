@@ -32,6 +32,7 @@ const (
 	ModeSprint
 	ModeUltra
 	ModeLeaderboard
+	ModeAI
 )
 
 var modeToStrMap = map[Mode]string{
@@ -40,6 +41,7 @@ var modeToStrMap = map[Mode]string{
 	ModeSprint:      "Sprint",
 	ModeUltra:       "Ultra",
 	ModeLeaderboard: "Leaderboard",
+	ModeAI:          "AI",
 }
 
 func (m Mode) String() string {
@@ -47,6 +49,22 @@ func (m Mode) String() string {
 }
 
 // SwitchModeInput values --------------------------------------------------
+
+type NoInput struct {
+	Mode     Mode
+	Level    int
+	Username string
+}
+
+func NewNoInput(mode Mode, level int, username string) *NoInput {
+	return &NoInput{
+		Mode:     mode,
+		Level:    level,
+		Username: username,
+	}
+}
+
+func (in *NoInput) isSwitchModeInput() {}
 
 type SingleInput struct {
 	Mode     Mode

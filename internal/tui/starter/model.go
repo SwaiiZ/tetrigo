@@ -120,6 +120,17 @@ func (m *Model) setChild(mode tui.Mode, switchIn tui.SwitchModeInput) error {
 		}
 		m.child = child
 
+	case tui.ModeAI:
+		noIn, ok := switchIn.(*tui.NoInput)
+		if !ok {
+			return fmt.Errorf("switchIn is not a NoInput: %w", charmutils.ErrInvalidTypeAssertion)
+		}
+		child, err := views.NewAIModel(noIn, m.cfg)
+		if err != nil {
+			return fmt.Errorf("creating single model: %w", err)
+		}
+		m.child = child
+
 	case tui.ModeLeaderboard:
 		leaderboardIn, ok := switchIn.(*tui.LeaderboardInput)
 		if !ok {

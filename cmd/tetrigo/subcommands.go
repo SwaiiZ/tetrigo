@@ -28,6 +28,7 @@ func (c *PlayCmd) Run(globals *GlobalVars) error {
 		"marathon": tui.ModeMarathon,
 		"sprint":   tui.ModeSprint,
 		"ultra":    tui.ModeUltra,
+		"AI":       tui.ModeAI,
 	}
 
 	mode, ok := singlePlayerModes[c.GameMode]

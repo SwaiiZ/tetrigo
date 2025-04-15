@@ -10,6 +10,7 @@ import (
 type GameKeyMap struct {
 	ForceQuit        key.Binding
 	Exit             key.Binding
+	ShowMatrix       key.Binding
 	Help             key.Binding
 	Left             key.Binding
 	Right            key.Binding
@@ -24,6 +25,7 @@ func ConstructGameKeyMap(keys *config.Keys) *GameKeyMap {
 	return &GameKeyMap{
 		ForceQuit:        charmutils.ConstructKeyBinding(keys.ForceQuit, "force quit"),
 		Exit:             charmutils.ConstructKeyBinding(keys.Exit, "exit"),
+		ShowMatrix:       charmutils.ConstructKeyBinding(keys.ShowMatrix, "exit"),
 		Help:             charmutils.ConstructKeyBinding(keys.Help, "help"),
 		Left:             charmutils.ConstructKeyBinding(keys.Left, "move left"),
 		Right:            charmutils.ConstructKeyBinding(keys.Right, "move right"),
