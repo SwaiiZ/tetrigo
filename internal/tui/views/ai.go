@@ -178,46 +178,59 @@ type Placement struct {
 	Score    float64
 }
 
-func (m *AIModel) findBestPlacement(mat tetris.Matrix, t tetris.Tetrimino) []Placement {
-	var placements []Placement
+func (m *AIModel) FindBestPlacement(mat tetris.Matrix, t tetris.Tetrimino) []Placement {
+	var (
+		width       = len(mat[0])
+		placementsC = make(chan []Placement, 4) // One per rotation
+	)
 
-	// Remplace 4 par la valeur exacte si t.Value a moins de rotations utiles
-	for rot := 0; rot < t.RotationCount(); rot++ {
-		tRot := *t.DeepCopy()
-		valid := true
-		for i := 0; i < rot; i++ {
-			if err := tRot.Rotate(mat, true); err != nil {
-				valid = false
-				break
-			}
-		}
-		if !valid {
-			continue
-		}
+	rotationCount := t.RotationCount()
+	for rot := 0; rot < rotationCount; rot++ {
+		go func(rot int) {
+			var results []Placement
 
-		maxX := len(mat[0]) - len(tRot.Cells[0])
-		for x := 0; x <= maxX; x++ {
-			y, ok := mat.DropPosition(tRot.Cells, x)
-			if !ok {
-				continue
+			tCopy := *t.DeepCopy()
+			for r := 0; r < rot; r++ {
+				if err := tCopy.Rotate(mat, true); err != nil {
+					placementsC <- results
+					return
+				}
 			}
 
-			tRot.Position = tetris.Coordinate{X: x, Y: y}
-			matCopy := mat.DeepCopy()
-			_ = matCopy.AddTetrimino(&tRot)
+			for x := 0; x <= width-len(tCopy.Cells[0]); x++ {
+				y := 0
+				for mat.CanPlace(tCopy.Cells, x, y+1) {
+					y++
+				}
+				if mat.CanPlace(tCopy.Cells, x, y) {
+					placed := *tCopy.DeepCopy()
+					placed.Position = tetris.Coordinate{X: x, Y: y}
 
-			score := matCopy.EvaluatePlacementScore()
+					matCopy := mat.DeepCopy()
+					_ = matCopy.AddTetrimino(&placed)
 
-			placements = append(placements, Placement{
-				X:        x,
-				Y:        y,
-				Rotation: rot,
-				Score:    score,
-			})
-		}
+					score := matCopy.EvaluatePlacementScore()
+
+					results = append(results, Placement{
+						X:        x,
+						Y:        y,
+						Rotation: rot,
+						Score:    score,
+					})
+				}
+			}
+
+			placementsC <- results
+		}(rot)
 	}
 
-	return placements
+	// Collect results
+	var allPlacements []Placement
+	for i := 0; i < rotationCount; i++ {
+		allPlacements = append(allPlacements, <-placementsC...)
+	}
+
+	return allPlacements
 }
 
 func (m *AIModel) dependenciesUpdate(msg tea.Msg) (*AIModel, tea.Cmd) {
@@ -366,7 +379,7 @@ func (m *AIModel) fallStopwatchTick() tea.Cmd {
 
 	// 1. Planifier si rien n'est prévu
 	if m.plannedMove == nil {
-		placements := m.findBestPlacement(matrix, *tetrimino)
+		placements := m.FindBestPlacement(matrix, *tetrimino)
 		if len(placements) == 0 {
 			return m.triggerGameOver()
 		}
