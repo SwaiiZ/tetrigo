@@ -60,10 +60,10 @@ func NewMenuModel(_ *tui.MenuInput) *MenuModel {
 				huh.NewSelect[tui.Mode]().Value(&formData.GameMode).
 					Title("Game Mode:").
 					Options(
+						huh.NewOption("AI", tui.ModeAI),
 						huh.NewOption("Marathon", tui.ModeMarathon),
 						huh.NewOption("Sprint (40 Lines)", tui.ModeSprint),
 						huh.NewOption("Ultra (Time Trial)", tui.ModeUltra),
-						huh.NewOption("AI", tui.ModeAI),
 					),
 				huh.NewSelect[int]().Value(&formData.Level).
 					Title("Starting Level:").

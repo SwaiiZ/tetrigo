@@ -5,6 +5,14 @@ import (
 	"fmt"
 )
 
+const (
+	ScoreWeightHoles      = 10
+	ScoreWeightUnfillable = 30
+	ScoreWeightBumpiness  = 3
+	ScoreWeightHeight     = 2
+	ScoreWeightLines      = 100
+)
+
 // Matrix represents the board of cells on which the game is played.
 type Matrix [][]byte
 
@@ -36,9 +44,153 @@ func (m *Matrix) GetHeight() int {
 	return len(*m)
 }
 
+func (m *Matrix) columnHeight(x int) int {
+	for y := 0; y < len(*m); y++ {
+		if (*m)[y][x] != 0 {
+			return y
+		}
+	}
+	return len(*m) // vide = hauteur max
+}
+
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
+
 // GetSkyline returns the skyline; the highest row that the player can see.
 func (m *Matrix) GetSkyline() int {
 	return len(*m) - 20
+}
+
+func (m *Matrix) CountFullLines() int {
+	count := 0
+	for y := 0; y < len(*m); y++ {
+		full := true
+		for x := 0; x < len((*m)[y]); x++ {
+			if (*m)[y][x] == 0 {
+				full = false
+				break
+			}
+		}
+		if full {
+			count++
+		}
+	}
+	return count
+}
+
+func (m *Matrix) GetMaxHeight() int {
+	mat := *m
+	maxHeight := 0
+	for mY := 0; mY < len(mat); mY++ {
+		for mX := 0; mX < len(mat[mY]); mX++ {
+			if mat[mY][mX] != 0 {
+				maxHeight = mY
+				break
+			}
+		}
+		if maxHeight != 0 {
+			break
+		}
+	}
+	return maxHeight
+}
+
+func (m *Matrix) GetBumpiness() int {
+	bumpiness := 0
+	width := len((*m)[0])
+
+	for x := 0; x < width-1; x++ {
+		h1 := m.columnHeight(x)
+		h2 := m.columnHeight(x + 1)
+		bumpiness += abs(h1 - h2)
+	}
+	return bumpiness
+}
+
+func (m *Matrix) CountHoles() int {
+	holes := 0
+	for x := 0; x < len((*m)[0]); x++ {
+		foundBlock := false
+		for y := 0; y < len(*m); y++ {
+			if (*m)[y][x] != 0 {
+				foundBlock = true
+			} else if foundBlock {
+				holes++
+			}
+		}
+	}
+	return holes
+}
+
+func (m *Matrix) CountUnfillableHoles() int {
+	unfillable := 0
+	width := len((*m)[0])
+	height := len(*m)
+
+	// Pour chaque colonne
+	for x := 0; x < width; x++ {
+		blockSeen := false
+		for y := 0; y < height; y++ {
+			cell := (*m)[y][x]
+			if cell != 0 {
+				blockSeen = true
+			} else if blockSeen {
+				// Trou détecté
+				leftHigher := x == 0 || m.columnHeight(x-1) > y
+				rightHigher := x == width-1 || m.columnHeight(x+1) > y
+
+				if leftHigher && rightHigher {
+					unfillable++
+				}
+			}
+		}
+	}
+	return unfillable
+}
+
+func (m *Matrix) EvaluateScore() int {
+	lines := m.CountFullLines()
+	holes := m.CountHoles()
+	unfillable := m.CountUnfillableHoles()
+	bump := m.GetBumpiness()
+	height := m.GetMaxHeight()
+
+	score := 0
+	score += holes * ScoreWeightHoles
+	score += unfillable * ScoreWeightUnfillable
+	score += bump * ScoreWeightBumpiness
+	score += height * ScoreWeightHeight
+	score -= lines * ScoreWeightLines
+
+	return score
+}
+
+func (m *Matrix) CanPlace(tCells [][]bool, offsetX, offsetY int) bool {
+	for y := 0; y < len(tCells); y++ {
+		for x := 0; x < len(tCells[y]); x++ {
+			if !tCells[y][x] {
+				continue
+			}
+
+			boardY := offsetY + y
+			boardX := offsetX + x
+
+			// Hors limites
+			if boardY < 0 || boardY >= len(*m) || boardX < 0 || boardX >= len((*m)[0]) {
+				return false
+			}
+
+			// Collision avec une cellule occupée
+			if (*m)[boardY][boardX] != 0 {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // GetVisible returns the Matrix without the buffer zone at the top (ie. the visible portion of the Matrix).

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"strconv"
+	"time"
 
 	"github.com/Broderick-Westrope/tetrigo/internal/tui/components"
 
@@ -23,6 +24,8 @@ import (
 	"github.com/Broderick-Westrope/tetrigo/pkg/tetris/modes/single"
 )
 
+const aiTickSpeed = 50 * time.Millisecond
+
 var _ tea.Model = &AIModel{}
 
 type AIModel struct {
@@ -31,6 +34,7 @@ type AIModel struct {
 	nextQueueLength int
 	fallStopwatch   components.Stopwatch
 	mode            tui.Mode
+	plannedMove     *Placement
 
 	gameTimer     components.Timer
 	gameStopwatch components.Stopwatch
@@ -96,7 +100,7 @@ func NewAIModel(
 	}
 
 	// Setup game dependents
-	m.fallStopwatch = components.NewStopwatchWithInterval(m.game.GetDefaultFallInterval())
+	m.fallStopwatch = components.NewStopwatchWithInterval(aiTickSpeed)
 
 	return m, nil
 }
@@ -129,6 +133,14 @@ func (m *AIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(cmds...)
 		case key.Matches(msg, m.keys.ForceQuit):
 			return m, tea.Quit
+		case key.Matches(msg, m.keys.ShowMatrix):
+			fmt.Println("Matrix")
+			matrix, _ := m.game.GetMatrix()
+			fmt.Println(matrix)
+			if !m.isPaused {
+				return m, m.togglePause()
+			}
+			return m, nil
 		}
 
 	case tea.WindowSizeMsg:
@@ -150,9 +162,54 @@ func (m *AIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, cmd)
 		return m, tea.Batch(cmds...)
 	}
+
+	// TODO - AI playing
+	// Get actual tetrimino
+	// Check board & calculate each one
+
 	m, cmd = m.playingUpdate(msg)
 	cmds = append(cmds, cmd)
 	return m, tea.Batch(cmds...)
+}
+
+type Placement struct {
+	X     int
+	Y     int
+	Score int
+}
+
+func (m *AIModel) findBestPlacement(mat tetris.Matrix, t tetris.Tetrimino) []Placement {
+	var placements []Placement
+
+	for x := 0; x <= len(mat[0])-len(t.Cells[0]); x++ {
+		y := 0
+		// Simule la chute : avance tant qu'on peut placer en (x, y)
+		for mat.CanPlace(t.Cells, x, y+1) {
+			y++
+		}
+
+		if mat.CanPlace(t.Cells, x, y) {
+			// 1. Cloner la matrice
+			matCopy := mat.DeepCopy()
+
+			tCopy := *t.DeepCopy() // ou copie manuelle si pas de méthode
+			tCopy.Position = tetris.Coordinate{X: x, Y: y}
+
+			// 2. Placer la pièce dedans (simulation)
+			_ = matCopy.AddTetrimino(&tCopy)
+
+			// 3. Évaluer le plateau modifié
+			score := matCopy.EvaluateScore()
+
+			placements = append(placements, Placement{
+				X:     x,
+				Y:     y,
+				Score: score,
+			})
+		}
+	}
+
+	return placements
 }
 
 func (m *AIModel) dependenciesUpdate(msg tea.Msg) (*AIModel, tea.Cmd) {
@@ -240,15 +297,6 @@ func (m *AIModel) playingUpdate(msg tea.Msg) (*AIModel, tea.Cmd) {
 func (m *AIModel) playingKeyMsgUpdate(msg tea.KeyMsg) (*AIModel, tea.Cmd) {
 	switch {
 
-	case key.Matches(msg, m.keys.ShowMatrix):
-		matrix, _ := m.game.GetVisibleMatrix()
-		for _, row := range matrix {
-			for _, val := range row {
-				fmt.Printf("%d ", val)
-			}
-			fmt.Println()
-		}
-		return m, nil
 	case key.Matches(msg, m.keys.Left):
 		m.game.MoveLeft()
 		return m, nil
@@ -305,15 +353,48 @@ func (m *AIModel) playingKeyMsgUpdate(msg tea.KeyMsg) (*AIModel, tea.Cmd) {
 }
 
 func (m *AIModel) fallStopwatchTick() tea.Cmd {
-	gameOver, err := m.game.TickLower()
-	if err != nil {
-		return tui.FatalErrorCmd(fmt.Errorf("lowering tetrimino (tick): %w", err))
+	matrix, _ := m.game.GetMatrix()
+	tetrimino := m.game.GetActualTetrimino()
+
+	// Si aucun coup n'est encore prévu, planifie-en un
+	if m.plannedMove == nil {
+		placements := m.findBestPlacement(matrix, *tetrimino)
+		if len(placements) == 0 {
+			return m.triggerGameOver()
+		}
+
+		best := placements[0]
+		for _, p := range placements[1:] {
+			if p.Score < best.Score {
+				best = p
+			}
+		}
+		m.plannedMove = &best
 	}
+
+	// On applique le plan : déplacement horizontal
+	if tetrimino.Position.X < m.plannedMove.X {
+		m.game.MoveRight()
+		return nil
+	}
+	if tetrimino.Position.X > m.plannedMove.X {
+		m.game.MoveLeft()
+		return nil
+	}
+
+	// On est bien positionné : Hard Drop
+	gameOver, err := m.game.HardDrop()
+	if err != nil {
+		return tui.FatalErrorCmd(fmt.Errorf("AI hard dropping: %w", err))
+	}
+	m.plannedMove = nil // on a joué
+
 	if gameOver {
 		return m.triggerGameOver()
 	}
+
 	m.fallStopwatch.SetInterval(m.game.GetFallInterval())
-	return nil
+	return m.fallStopwatch.Reset()
 }
 
 func (m *AIModel) View() string {

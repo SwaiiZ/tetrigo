@@ -27,8 +27,18 @@ func (g *Game) GetVisibleMatrix() (tetris.Matrix, error) {
 	return matrix.GetVisible(), nil
 }
 
+func (g *Game) GetMatrix() (tetris.Matrix, error) {
+	matrix := g.matrix.DeepCopy()
+
+	return matrix.GetVisible(), nil
+}
+
 func (g *Game) GetBagTetriminos() []tetris.Tetrimino {
 	return g.nextQueue.GetElements()
+}
+
+func (g *Game) GetActualTetrimino() *tetris.Tetrimino {
+	return g.tetInPlay
 }
 
 func (g *Game) GetHoldTetrimino() *tetris.Tetrimino {
