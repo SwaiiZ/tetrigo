@@ -3,8 +3,8 @@ package views
 import (
 	"fmt"
 	"math/rand/v2"
+	"sort"
 	"strconv"
-	"time"
 
 	"github.com/Broderick-Westrope/tetrigo/internal/tui/components"
 
@@ -24,8 +24,6 @@ import (
 	"github.com/Broderick-Westrope/tetrigo/pkg/tetris/modes/single"
 )
 
-const aiTickSpeed = 50 * time.Millisecond
-
 var _ tea.Model = &AIModel{}
 
 type AIModel struct {
@@ -35,6 +33,7 @@ type AIModel struct {
 	fallStopwatch   components.Stopwatch
 	mode            tui.Mode
 	plannedMove     *Placement
+	rotationLeft    int
 
 	gameTimer     components.Timer
 	gameStopwatch components.Stopwatch
@@ -100,7 +99,7 @@ func NewAIModel(
 	}
 
 	// Setup game dependents
-	m.fallStopwatch = components.NewStopwatchWithInterval(aiTickSpeed)
+	m.fallStopwatch = components.NewStopwatchWithInterval(m.game.GetDefaultFallInterval())
 
 	return m, nil
 }
@@ -173,42 +172,56 @@ func (m *AIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 type Placement struct {
-	X     int
-	Y     int
-	Score int
+	X        int
+	Y        int
+	Rotation int
+	Score    float64
 }
 
 func (m *AIModel) findBestPlacement(mat tetris.Matrix, t tetris.Tetrimino) []Placement {
 	var placements []Placement
 
-	for x := 0; x <= len(mat[0])-len(t.Cells[0]); x++ {
-		y := 0
-		// Simule la chute : avance tant qu'on peut placer en (x, y)
-		for mat.CanPlace(t.Cells, x, y+1) {
-			y++
+	for rot := 0; rot < 4; rot++ {
+		baseCopy := *t.DeepCopy()
+		success := true
+
+		// Apply rotation on base copy
+		for r := 0; r < rot; r++ {
+			err := baseCopy.Rotate(mat, true)
+			if err != nil {
+				success = false
+				break
+			}
+		}
+		if !success {
+			continue
 		}
 
-		if mat.CanPlace(t.Cells, x, y) {
-			// 1. Cloner la matrice
-			matCopy := mat.DeepCopy()
+		for x := 0; x <= len(mat[0])-len(baseCopy.Cells[0]); x++ {
+			y := 0
+			for mat.CanPlace(baseCopy.Cells, x, y+1) {
+				y++
+			}
+			if mat.CanPlace(baseCopy.Cells, x, y) {
+				// DeepCopy piece + position inside X loop
+				tCopy := *baseCopy.DeepCopy()
+				tCopy.Position = tetris.Coordinate{X: x, Y: y}
 
-			tCopy := *t.DeepCopy() // ou copie manuelle si pas de méthode
-			tCopy.Position = tetris.Coordinate{X: x, Y: y}
+				// Copy matrix and place
+				matCopy := mat.DeepCopy()
+				_ = matCopy.AddTetrimino(&tCopy)
 
-			// 2. Placer la pièce dedans (simulation)
-			_ = matCopy.AddTetrimino(&tCopy)
+				score := matCopy.EvaluatePlacementScore(tCopy)
 
-			// 3. Évaluer le plateau modifié
-			score := matCopy.EvaluateScore()
-
-			placements = append(placements, Placement{
-				X:     x,
-				Y:     y,
-				Score: score,
-			})
+				placements = append(placements, Placement{
+					X:        x,
+					Y:        y,
+					Rotation: rot,
+					Score:    score,
+				})
+			}
 		}
 	}
-
 	return placements
 }
 
@@ -356,44 +369,48 @@ func (m *AIModel) fallStopwatchTick() tea.Cmd {
 	matrix, _ := m.game.GetMatrix()
 	tetrimino := m.game.GetActualTetrimino()
 
-	// Si aucun coup n'est encore prévu, planifie-en un
+	// 1. Planifier si rien n'est prévu
 	if m.plannedMove == nil {
 		placements := m.findBestPlacement(matrix, *tetrimino)
 		if len(placements) == 0 {
 			return m.triggerGameOver()
 		}
 
+		sort.Slice(placements, func(i, j int) bool {
+			return placements[i].Score > placements[j].Score
+		})
+
 		best := placements[0]
-		for _, p := range placements[1:] {
-			if p.Score < best.Score {
-				best = p
-			}
-		}
+
 		m.plannedMove = &best
+		m.rotationLeft = best.Rotation
 	}
 
-	// On applique le plan : déplacement horizontal
-	if tetrimino.Position.X < m.plannedMove.X {
+	for i := 0; i < m.plannedMove.Rotation; i++ {
+		err := m.game.Rotate(true)
+		if err != nil {
+			return tui.FatalErrorCmd(fmt.Errorf("AI rotation failed: %w", err))
+		}
+	}
+
+	for m.game.GetActualTetrimino().Position.X < m.plannedMove.X {
 		m.game.MoveRight()
-		return nil
 	}
-	if tetrimino.Position.X > m.plannedMove.X {
+	for m.game.GetActualTetrimino().Position.X > m.plannedMove.X {
 		m.game.MoveLeft()
-		return nil
 	}
 
-	// On est bien positionné : Hard Drop
 	gameOver, err := m.game.HardDrop()
 	if err != nil {
 		return tui.FatalErrorCmd(fmt.Errorf("AI hard dropping: %w", err))
 	}
-	m.plannedMove = nil // on a joué
+
+	m.plannedMove = nil
 
 	if gameOver {
 		return m.triggerGameOver()
 	}
 
-	m.fallStopwatch.SetInterval(m.game.GetFallInterval())
 	return m.fallStopwatch.Reset()
 }
 

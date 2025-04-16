@@ -3,6 +3,7 @@ package tetris
 import (
 	"errors"
 	"fmt"
+	"math"
 )
 
 const (
@@ -65,6 +66,35 @@ func (m *Matrix) GetSkyline() int {
 	return len(*m) - 20
 }
 
+func (m *Matrix) EvaluatePlacementScore(t Tetrimino) float64 {
+	const (
+		weightLinesCleared     = -0.1915
+		weightWeightedHeight   = -0.0522
+		weightCumulativeHeight = -0.2006
+		weightRelativeHeight   = 0.0744
+		weightHoles            = -0.0792
+		weightBumpiness        = -0.0429
+	)
+
+	columnHeights := m.GetColumnHeights()
+	linesCleared := m.CountFullLines()
+	weightedHeight := m.WeightedHeight(columnHeights)
+	cumulativeHeight := m.CumulativeHeight(columnHeights)
+	relativeHeight := m.RelativeHeight(columnHeights)
+	holes := m.CountHoles()
+	bumpiness := m.Bumpiness(columnHeights)
+
+	score := 0.0
+	score += float64(linesCleared) * weightLinesCleared
+	score += float64(weightedHeight) * weightWeightedHeight
+	score += float64(cumulativeHeight) * weightCumulativeHeight
+	score += float64(relativeHeight) * weightRelativeHeight
+	score += float64(holes) * weightHoles
+	score += float64(bumpiness) * weightBumpiness
+
+	return score
+}
+
 func (m *Matrix) CountFullLines() int {
 	count := 0
 	for y := 0; y < len(*m); y++ {
@@ -82,91 +112,81 @@ func (m *Matrix) CountFullLines() int {
 	return count
 }
 
-func (m *Matrix) GetMaxHeight() int {
-	mat := *m
-	maxHeight := 0
-	for mY := 0; mY < len(mat); mY++ {
-		for mX := 0; mX < len(mat[mY]); mX++ {
-			if mat[mY][mX] != 0 {
-				maxHeight = mY
+func (m *Matrix) GetColumnHeights() []int {
+	width := len((*m)[0])
+	height := len(*m)
+	columnHeights := make([]int, width)
+
+	for x := 0; x < width; x++ {
+		for y := 0; y < height; y++ {
+			if (*m)[y][x] != 0 {
+				columnHeights[x] = height - y
 				break
 			}
 		}
-		if maxHeight != 0 {
-			break
-		}
 	}
-	return maxHeight
+
+	return columnHeights
 }
 
-func (m *Matrix) GetBumpiness() int {
-	bumpiness := 0
-	width := len((*m)[0])
-
-	for x := 0; x < width-1; x++ {
-		h1 := m.columnHeight(x)
-		h2 := m.columnHeight(x + 1)
-		bumpiness += abs(h1 - h2)
+func (m *Matrix) WeightedHeight(heights []int) float64 {
+	maxHeight := 0
+	for _, h := range heights {
+		if h > maxHeight {
+			maxHeight = h
+		}
 	}
-	return bumpiness
+	return math.Pow(float64(maxHeight), 1.5)
+}
+
+func (m *Matrix) CumulativeHeight(heights []int) int {
+	sum := 0
+	for _, h := range heights {
+		sum += h
+	}
+	return sum
+}
+
+func (m *Matrix) RelativeHeight(heights []int) int {
+	if len(heights) == 0 {
+		return 0
+	}
+	maxHeight, minHeight := heights[0], heights[0]
+	for _, h := range heights {
+		if h > maxHeight {
+			maxHeight = h
+		}
+		if h < minHeight {
+			minHeight = h
+		}
+	}
+	return maxHeight - minHeight
+}
+
+func (m *Matrix) Bumpiness(heights []int) int {
+	bump := 0
+	for i := 0; i < len(heights)-1; i++ {
+		bump += abs(heights[i] - heights[i+1])
+	}
+	return bump
 }
 
 func (m *Matrix) CountHoles() int {
 	holes := 0
-	for x := 0; x < len((*m)[0]); x++ {
-		foundBlock := false
-		for y := 0; y < len(*m); y++ {
+	width := len((*m)[0])
+	height := len(*m)
+
+	for x := 0; x < width; x++ {
+		blockAbove := false
+		for y := 0; y < height; y++ {
 			if (*m)[y][x] != 0 {
-				foundBlock = true
-			} else if foundBlock {
+				blockAbove = true
+			} else if blockAbove {
 				holes++
 			}
 		}
 	}
 	return holes
-}
-
-func (m *Matrix) CountUnfillableHoles() int {
-	unfillable := 0
-	width := len((*m)[0])
-	height := len(*m)
-
-	// Pour chaque colonne
-	for x := 0; x < width; x++ {
-		blockSeen := false
-		for y := 0; y < height; y++ {
-			cell := (*m)[y][x]
-			if cell != 0 {
-				blockSeen = true
-			} else if blockSeen {
-				// Trou détecté
-				leftHigher := x == 0 || m.columnHeight(x-1) > y
-				rightHigher := x == width-1 || m.columnHeight(x+1) > y
-
-				if leftHigher && rightHigher {
-					unfillable++
-				}
-			}
-		}
-	}
-	return unfillable
-}
-
-func (m *Matrix) EvaluateScore() int {
-	lines := m.CountFullLines()
-	holes := m.CountHoles()
-	unfillable := m.CountUnfillableHoles()
-	bump := m.GetBumpiness()
-	height := m.GetMaxHeight()
-
-	score := 0
-	score += holes * ScoreWeightHoles
-	score += unfillable * ScoreWeightUnfillable
-	score += bump * ScoreWeightBumpiness
-	score += height * ScoreWeightHeight
-	score -= lines * ScoreWeightLines
-
-	return score
 }
 
 func (m *Matrix) CanPlace(tCells [][]bool, offsetX, offsetY int) bool {
