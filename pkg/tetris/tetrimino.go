@@ -317,6 +317,17 @@ func (t *Tetrimino) Rotate(matrix Matrix, clockwise bool) error {
 	return nil
 }
 
+func (t *Tetrimino) RotationCount() int {
+	switch t.Value {
+	case 'I', 'S', 'Z':
+		return 2
+	case 'O':
+		return 1
+	default:
+		return 4
+	}
+}
+
 // rotateClockwise rotates the Tetrimino clockwise.
 // This does not modify the matrix.
 // If a valid rotation is found, the rotation point is returned.

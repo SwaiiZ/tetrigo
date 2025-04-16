@@ -66,7 +66,7 @@ func (m *Matrix) GetSkyline() int {
 	return len(*m) - 20
 }
 
-func (m *Matrix) EvaluatePlacementScore(t Tetrimino) float64 {
+func (m *Matrix) EvaluatePlacementScore() float64 {
 	const (
 		weightLinesCleared     = -0.1915
 		weightWeightedHeight   = -0.0522
@@ -76,83 +76,67 @@ func (m *Matrix) EvaluatePlacementScore(t Tetrimino) float64 {
 		weightBumpiness        = -0.0429
 	)
 
-	columnHeights := m.GetColumnHeights()
-	linesCleared := m.CountFullLines()
-	weightedHeight := m.WeightedHeight(columnHeights)
-	cumulativeHeight := m.CumulativeHeight(columnHeights)
-	relativeHeight := m.RelativeHeight(columnHeights)
-	holes := m.CountHoles()
-	bumpiness := m.Bumpiness(columnHeights)
+	features := m.EvaluateFeatures()
 
 	score := 0.0
-	score += float64(linesCleared) * weightLinesCleared
-	score += float64(weightedHeight) * weightWeightedHeight
-	score += float64(cumulativeHeight) * weightCumulativeHeight
-	score += float64(relativeHeight) * weightRelativeHeight
-	score += float64(holes) * weightHoles
-	score += float64(bumpiness) * weightBumpiness
+	score += float64(features.LinesCleared) * weightLinesCleared
+	score += features.WeightedHeight * weightWeightedHeight
+	score += float64(features.CumulativeHeight) * weightCumulativeHeight
+	score += float64(features.RelativeHeight) * weightRelativeHeight
+	score += float64(features.Holes) * weightHoles
+	score += float64(features.Bumpiness) * weightBumpiness
 
 	return score
 }
 
-func (m *Matrix) CountFullLines() int {
-	count := 0
-	for y := 0; y < len(*m); y++ {
-		full := true
-		for x := 0; x < len((*m)[y]); x++ {
-			if (*m)[y][x] == 0 {
-				full = false
-				break
-			}
-		}
-		if full {
-			count++
-		}
-	}
-	return count
+type PlacementFeatures struct {
+	CumulativeHeight int
+	WeightedHeight   float64
+	RelativeHeight   int
+	Holes            int
+	Bumpiness        int
+	LinesCleared     int
 }
 
-func (m *Matrix) GetColumnHeights() []int {
+func (m *Matrix) EvaluateFeatures() PlacementFeatures {
 	width := len((*m)[0])
 	height := len(*m)
-	columnHeights := make([]int, width)
 
-	for x := 0; x < width; x++ {
-		for y := 0; y < height; y++ {
+	columnHeights := make([]int, width)
+	blockSeen := make([]bool, width)
+	holes := 0
+	linesCleared := 0
+	rowCounts := make([]int, height)
+
+	for y := 0; y < height; y++ {
+		rowFull := true
+		for x := 0; x < width; x++ {
 			if (*m)[y][x] != 0 {
-				columnHeights[x] = height - y
-				break
+				if !blockSeen[x] {
+					columnHeights[x] = height - y
+					blockSeen[x] = true
+				}
+				rowCounts[y]++
+			} else {
+				if blockSeen[x] {
+					holes++
+				}
+				rowFull = false
 			}
 		}
-	}
-
-	return columnHeights
-}
-
-func (m *Matrix) WeightedHeight(heights []int) float64 {
-	maxHeight := 0
-	for _, h := range heights {
-		if h > maxHeight {
-			maxHeight = h
+		if rowFull {
+			linesCleared++
 		}
 	}
-	return math.Pow(float64(maxHeight), 1.5)
-}
 
-func (m *Matrix) CumulativeHeight(heights []int) int {
-	sum := 0
-	for _, h := range heights {
-		sum += h
-	}
-	return sum
-}
+	cumulativeHeight := 0
+	weightedHeight := 0.0
+	maxHeight := columnHeights[0]
+	minHeight := columnHeights[0]
 
-func (m *Matrix) RelativeHeight(heights []int) int {
-	if len(heights) == 0 {
-		return 0
-	}
-	maxHeight, minHeight := heights[0], heights[0]
-	for _, h := range heights {
+	for _, h := range columnHeights {
+		cumulativeHeight += h
+		weightedHeight += math.Pow(float64(h), 1.5)
 		if h > maxHeight {
 			maxHeight = h
 		}
@@ -160,33 +144,20 @@ func (m *Matrix) RelativeHeight(heights []int) int {
 			minHeight = h
 		}
 	}
-	return maxHeight - minHeight
-}
 
-func (m *Matrix) Bumpiness(heights []int) int {
-	bump := 0
-	for i := 0; i < len(heights)-1; i++ {
-		bump += abs(heights[i] - heights[i+1])
+	bumpiness := 0
+	for i := 0; i < width-1; i++ {
+		bumpiness += abs(columnHeights[i] - columnHeights[i+1])
 	}
-	return bump
-}
 
-func (m *Matrix) CountHoles() int {
-	holes := 0
-	width := len((*m)[0])
-	height := len(*m)
-
-	for x := 0; x < width; x++ {
-		blockAbove := false
-		for y := 0; y < height; y++ {
-			if (*m)[y][x] != 0 {
-				blockAbove = true
-			} else if blockAbove {
-				holes++
-			}
-		}
+	return PlacementFeatures{
+		CumulativeHeight: cumulativeHeight,
+		WeightedHeight:   weightedHeight,
+		RelativeHeight:   maxHeight - minHeight,
+		Holes:            holes,
+		Bumpiness:        bumpiness,
+		LinesCleared:     linesCleared,
 	}
-	return holes
 }
 
 func (m *Matrix) CanPlace(tCells [][]bool, offsetX, offsetY int) bool {
@@ -211,6 +182,18 @@ func (m *Matrix) CanPlace(tCells [][]bool, offsetX, offsetY int) bool {
 		}
 	}
 	return true
+}
+
+func (m *Matrix) DropPosition(cells [][]bool, x int) (int, bool) {
+	for y := 0; y < len(*m); y++ {
+		if !m.CanPlace(cells, x, y+1) {
+			if m.CanPlace(cells, x, y) {
+				return y, true
+			}
+			return 0, false
+		}
+	}
+	return 0, false
 }
 
 // GetVisible returns the Matrix without the buffer zone at the top (ie. the visible portion of the Matrix).

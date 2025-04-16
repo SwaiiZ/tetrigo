@@ -181,47 +181,42 @@ type Placement struct {
 func (m *AIModel) findBestPlacement(mat tetris.Matrix, t tetris.Tetrimino) []Placement {
 	var placements []Placement
 
-	for rot := 0; rot < 4; rot++ {
-		baseCopy := *t.DeepCopy()
-		success := true
-
-		// Apply rotation on base copy
-		for r := 0; r < rot; r++ {
-			err := baseCopy.Rotate(mat, true)
-			if err != nil {
-				success = false
+	// Remplace 4 par la valeur exacte si t.Value a moins de rotations utiles
+	for rot := 0; rot < t.RotationCount(); rot++ {
+		tRot := *t.DeepCopy()
+		valid := true
+		for i := 0; i < rot; i++ {
+			if err := tRot.Rotate(mat, true); err != nil {
+				valid = false
 				break
 			}
 		}
-		if !success {
+		if !valid {
 			continue
 		}
 
-		for x := 0; x <= len(mat[0])-len(baseCopy.Cells[0]); x++ {
-			y := 0
-			for mat.CanPlace(baseCopy.Cells, x, y+1) {
-				y++
+		maxX := len(mat[0]) - len(tRot.Cells[0])
+		for x := 0; x <= maxX; x++ {
+			y, ok := mat.DropPosition(tRot.Cells, x)
+			if !ok {
+				continue
 			}
-			if mat.CanPlace(baseCopy.Cells, x, y) {
-				// DeepCopy piece + position inside X loop
-				tCopy := *baseCopy.DeepCopy()
-				tCopy.Position = tetris.Coordinate{X: x, Y: y}
 
-				// Copy matrix and place
-				matCopy := mat.DeepCopy()
-				_ = matCopy.AddTetrimino(&tCopy)
+			tRot.Position = tetris.Coordinate{X: x, Y: y}
+			matCopy := mat.DeepCopy()
+			_ = matCopy.AddTetrimino(&tRot)
 
-				score := matCopy.EvaluatePlacementScore(tCopy)
+			score := matCopy.EvaluatePlacementScore()
 
-				placements = append(placements, Placement{
-					X:        x,
-					Y:        y,
-					Rotation: rot,
-					Score:    score,
-				})
-			}
+			placements = append(placements, Placement{
+				X:        x,
+				Y:        y,
+				Rotation: rot,
+				Score:    score,
+			})
 		}
 	}
+
 	return placements
 }
 
