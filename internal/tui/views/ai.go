@@ -2,11 +2,10 @@ package views
 
 import (
 	"fmt"
-	"math/rand/v2"
-	"sort"
-	"strconv"
-
 	"github.com/Broderick-Westrope/tetrigo/internal/tui/components"
+	"math"
+	"math/rand/v2"
+	"strconv"
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
@@ -174,62 +173,6 @@ type Placement struct {
 	Score    float64
 }
 
-func (m *AIModel) FindBestPlacement(mat tetris.Matrix, t tetris.Tetrimino) []Placement {
-	var (
-		width       = len(mat[0])
-		placementsC = make(chan []Placement, 4) // One per rotation
-	)
-
-	rotationCount := t.RotationCount()
-	for rot := 0; rot < rotationCount; rot++ {
-		rotCopy := rot
-		go func() {
-			var results []Placement
-
-			tCopy := *t.DeepCopy()
-			for r := 0; r < rotCopy; r++ {
-				if err := tCopy.Rotate(mat, true); err != nil {
-					placementsC <- results
-					return
-				}
-			}
-
-			for x := 0; x <= width-len(tCopy.Cells[0]); x++ {
-				y := 0
-				for mat.CanPlace(tCopy.Cells, x, y+1) {
-					y++
-				}
-				if mat.CanPlace(tCopy.Cells, x, y) {
-					placed := *tCopy.DeepCopy()
-					placed.Position = tetris.Coordinate{X: x, Y: y}
-
-					matCopy := mat.DeepCopy()
-					_ = matCopy.AddTetrimino(&placed)
-
-					score := matCopy.EvaluatePlacementScore()
-
-					results = append(results, Placement{
-						X:        x,
-						Y:        y,
-						Rotation: rotCopy,
-						Score:    score,
-					})
-				}
-			}
-
-			placementsC <- results
-		}()
-	}
-
-	// Collect results
-	var allPlacements []Placement
-	for i := 0; i < rotationCount; i++ {
-		allPlacements = append(allPlacements, <-placementsC...)
-	}
-
-	return allPlacements
-}
-
 func (m *AIModel) dependenciesUpdate(msg tea.Msg) (*AIModel, tea.Cmd) {
 	var cmd tea.Cmd
 	var cmds []tea.Cmd
@@ -370,52 +313,126 @@ func (m *AIModel) playingKeyMsgUpdate(msg tea.KeyMsg) (*AIModel, tea.Cmd) {
 	return m, nil
 }
 
-func (m *AIModel) fallStopwatchTick() tea.Cmd {
-	matrix, _ := m.game.GetMatrix()
-	tetrimino := m.game.GetActualTetrimino()
+// FindBestPlacement explores all valid placements for a tetrimino on the matrix.
+func (m *AIModel) FindBestPlacement(mat tetris.Matrix, t tetris.Tetrimino) []Placement {
+	var (
+		placementsC = make(chan []Placement, t.RotationCount())
+		width       = len(mat[0])
+	)
 
-	// 1. Planifier si rien n'est prévu
-	if m.plannedMove == nil {
-		placements := m.FindBestPlacement(matrix, *tetrimino)
-		if len(placements) == 0 {
-			return m.triggerGameOver()
-		}
+	for rot := 0; rot < t.RotationCount(); rot++ {
+		rot := rot
+		go func() {
+			tCopy := *t.DeepCopy()
+			for i := 0; i < rot; i++ {
+				_ = tCopy.Rotate(mat, true)
+			}
 
-		sort.Slice(placements, func(i, j int) bool {
-			return placements[i].Score > placements[j].Score
-		})
-
-		best := placements[0]
-
-		m.plannedMove = &best
-		m.rotationLeft = best.Rotation
+			var results []Placement
+			for x := 0; x <= width-len(tCopy.Cells[0]); x++ {
+				y := 0
+				for mat.CanPlace(tCopy.Cells, x, y+1) {
+					y++
+				}
+				if mat.CanPlace(tCopy.Cells, x, y) {
+					placed := *tCopy.DeepCopy()
+					placed.Position = tetris.Coordinate{X: x, Y: y}
+					matCopy := mat.DeepCopy()
+					_ = matCopy.AddTetrimino(&placed)
+					score := matCopy.EvaluatePlacementScore()
+					results = append(results, Placement{
+						X: x, Y: y, Rotation: rot, Score: score,
+					})
+				}
+			}
+			placementsC <- results
+		}()
 	}
 
-	for i := 0; i < m.plannedMove.Rotation; i++ {
-		err := m.game.Rotate(true)
-		if err != nil {
+	var allPlacements []Placement
+	for i := 0; i < t.RotationCount(); i++ {
+		allPlacements = append(allPlacements, <-placementsC...)
+	}
+	return allPlacements
+}
+
+// FindBestPlacementSequence recursively evaluates a sequence of Tetriminos.
+func (m *AIModel) FindBestPlacementSequence(mat tetris.Matrix, pieces []tetris.Tetrimino, depth int) ([]Placement, float64) {
+	if depth == 0 || len(pieces) == 0 {
+		return nil, 0
+	}
+
+	first := pieces[0]
+	rest := pieces[1:]
+	candidates := m.FindBestPlacement(mat, first)
+
+	var (
+		bestScore = math.Inf(-1)
+		bestSeq   []Placement
+	)
+
+	for _, move := range candidates {
+		matCopy := mat.DeepCopy()
+		tCopy := first.DeepCopy()
+		tCopy.Position = tetris.Coordinate{X: move.X, Y: move.Y}
+		for i := 0; i < move.Rotation; i++ {
+			_ = tCopy.Rotate(*matCopy, true)
+		}
+		_ = matCopy.AddTetrimino(tCopy)
+
+		seq, score := m.FindBestPlacementSequence(*matCopy, rest, depth-1)
+		total := move.Score + score
+		if total > bestScore {
+			bestScore = total
+			bestSeq = append([]Placement{move}, seq...)
+		}
+	}
+
+	return bestSeq, bestScore
+}
+
+// fallStopwatchTick uses depth lookahead to plan and execute the best move.
+func (m *AIModel) fallStopwatchTick() tea.Cmd {
+	matrix, _ := m.game.GetMatrix()
+	current := m.game.GetActualTetrimino()
+	next := m.game.GetBagTetriminos()
+
+	if m.plannedMove == nil {
+		pieces := append([]tetris.Tetrimino{*current}, next...)
+		sequence, _ := m.FindBestPlacementSequence(matrix, pieces, 4)
+		if len(sequence) == 0 {
+			return m.triggerGameOver()
+		}
+		m.plannedMove = &sequence[0]
+		m.rotationLeft = sequence[0].Rotation
+	}
+
+	for i := 0; i < m.rotationLeft; i++ {
+		if err := m.game.Rotate(true); err != nil {
 			return tui.FatalErrorCmd(fmt.Errorf("AI rotation failed: %w", err))
 		}
 	}
+	m.rotationLeft = 0
 
-	for m.game.GetActualTetrimino().Position.X < m.plannedMove.X {
+	t := m.game.GetActualTetrimino()
+	for t.Position.X < m.plannedMove.X {
 		m.game.MoveRight()
+		t = m.game.GetActualTetrimino()
 	}
-	for m.game.GetActualTetrimino().Position.X > m.plannedMove.X {
+	for t.Position.X > m.plannedMove.X {
 		m.game.MoveLeft()
+		t = m.game.GetActualTetrimino()
 	}
 
 	gameOver, err := m.game.HardDrop()
 	if err != nil {
 		return tui.FatalErrorCmd(fmt.Errorf("AI hard dropping: %w", err))
 	}
-
 	m.plannedMove = nil
 
 	if gameOver {
 		return m.triggerGameOver()
 	}
-
 	return m.fallStopwatch.Reset()
 }
 
