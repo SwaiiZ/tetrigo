@@ -369,36 +369,48 @@ func (m *AIModel) FindBestPlacement(mat tetris.Matrix, t tetris.Tetrimino) []Pla
 
 // FindBestPlacementSequence recursively evaluates a sequence of Tetriminos.
 func (m *AIModel) FindBestPlacementSequence(mat tetris.Matrix, pieces []tetris.Tetrimino, depth int) ([]Placement, float64) {
-	if depth == 0 || len(pieces) == 0 {
+	if len(pieces) == 0 || depth == 0 {
 		return nil, 0
 	}
 
 	first := pieces[0]
 	rest := pieces[1:]
-	candidates := m.FindBestPlacement(mat, first)
 
+	candidates := m.FindBestPlacement(mat, first)
 	var (
+		mu        sync.Mutex
+		wg        sync.WaitGroup
 		bestScore = math.Inf(-1)
 		bestSeq   []Placement
 	)
 
 	for _, move := range candidates {
-		matCopy := mat.DeepCopy()
-		tCopy := first.DeepCopy()
-		tCopy.Position = tetris.Coordinate{X: move.X, Y: move.Y}
-		for i := 0; i < move.Rotation; i++ {
-			_ = tCopy.Rotate(*matCopy, true)
-		}
-		_ = matCopy.AddTetrimino(tCopy)
+		move := move
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 
-		seq, score := m.FindBestPlacementSequence(*matCopy, rest, depth-1)
-		total := move.Score + score
-		if total > bestScore {
-			bestScore = total
-			bestSeq = append([]Placement{move}, seq...)
-		}
+			matCopy := mat.DeepCopy()
+			tCopy := first.DeepCopy()
+			tCopy.Position = tetris.Coordinate{X: move.X, Y: move.Y}
+			for i := 0; i < move.Rotation; i++ {
+				_ = tCopy.Rotate(*matCopy, true)
+			}
+			_ = matCopy.AddTetrimino(tCopy)
+
+			seq, score := m.FindBestPlacementSequence(*matCopy, rest, depth-1)
+			total := move.Score + score
+
+			mu.Lock()
+			if total > bestScore {
+				bestScore = total
+				bestSeq = append([]Placement{move}, seq...)
+			}
+			mu.Unlock()
+		}()
 	}
 
+	wg.Wait()
 	return bestSeq, bestScore
 }
 
