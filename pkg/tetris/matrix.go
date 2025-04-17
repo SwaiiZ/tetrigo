@@ -79,12 +79,12 @@ func (m *Matrix) IsOverfilled() bool {
 
 func (m *Matrix) EvaluatePlacementScore() float64 {
 	const (
-		weightLinesCleared     = -0.1915
-		weightWeightedHeight   = -0.0522
-		weightCumulativeHeight = -0.2006
-		weightRelativeHeight   = 0.0744
-		weightHoles            = -0.0792
-		weightBumpiness        = -0.0429
+		weightLinesCleared     = +0.7600 // Promote clearing
+		weightWeightedHeight   = -0.3500
+		weightCumulativeHeight = -0.3000
+		weightRelativeHeight   = -0.1800
+		weightHoles            = -0.8000 // Strongly discourage holes
+		weightBumpiness        = -0.1800 // Discourage jagged stacks
 	)
 
 	features := m.EvaluateFeatures()

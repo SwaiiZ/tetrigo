@@ -162,10 +162,6 @@ func (m *AIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 	}
 
-	// TODO - AI playing
-	// Get actual tetrimino
-	// Check board & calculate each one
-
 	m, cmd = m.playingUpdate(msg)
 	cmds = append(cmds, cmd)
 	return m, tea.Batch(cmds...)
@@ -186,11 +182,12 @@ func (m *AIModel) FindBestPlacement(mat tetris.Matrix, t tetris.Tetrimino) []Pla
 
 	rotationCount := t.RotationCount()
 	for rot := 0; rot < rotationCount; rot++ {
-		go func(rot int) {
+		rotCopy := rot
+		go func() {
 			var results []Placement
 
 			tCopy := *t.DeepCopy()
-			for r := 0; r < rot; r++ {
+			for r := 0; r < rotCopy; r++ {
 				if err := tCopy.Rotate(mat, true); err != nil {
 					placementsC <- results
 					return
@@ -214,14 +211,14 @@ func (m *AIModel) FindBestPlacement(mat tetris.Matrix, t tetris.Tetrimino) []Pla
 					results = append(results, Placement{
 						X:        x,
 						Y:        y,
-						Rotation: rot,
+						Rotation: rotCopy,
 						Score:    score,
 					})
 				}
 			}
 
 			placementsC <- results
-		}(rot)
+		}()
 	}
 
 	// Collect results
