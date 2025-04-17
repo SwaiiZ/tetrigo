@@ -6,14 +6,6 @@ import (
 	"math"
 )
 
-const (
-	ScoreWeightHoles      = 10
-	ScoreWeightUnfillable = 30
-	ScoreWeightBumpiness  = 3
-	ScoreWeightHeight     = 2
-	ScoreWeightLines      = 100
-)
-
 // Matrix represents the board of cells on which the game is played.
 type Matrix [][]byte
 
@@ -79,12 +71,12 @@ func (m *Matrix) IsOverfilled() bool {
 
 func (m *Matrix) EvaluatePlacementScore() float64 {
 	const (
-		weightLinesCleared     = +0.7600 // Promote clearing
-		weightWeightedHeight   = -0.3500
-		weightCumulativeHeight = -0.3000
-		weightRelativeHeight   = -0.1800
-		weightHoles            = -0.8000 // Strongly discourage holes
-		weightBumpiness        = -0.1800 // Discourage jagged stacks
+		weightLinesCleared     = -0.0423
+		weightWeightedHeight   = -0.0278
+		weightCumulativeHeight = -0.5503
+		weightRelativeHeight   = -0.0380
+		weightHoles            = -0.0173
+		weightBumpiness        = -0.0685
 	)
 
 	features := m.EvaluateFeatures()

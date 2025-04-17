@@ -6,6 +6,7 @@ import (
 	"math"
 	"math/rand/v2"
 	"strconv"
+	"sync"
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
@@ -313,36 +314,57 @@ func (m *AIModel) playingKeyMsgUpdate(msg tea.KeyMsg) (*AIModel, tea.Cmd) {
 	return m, nil
 }
 
-// FindBestPlacement explores all valid placements for a tetrimino on the matrix.
+// FindBestPlacement explores all valid placements for a tetrimino on the matrix using goroutines and sync.WaitGroup for performance.
 func (m *AIModel) FindBestPlacement(mat tetris.Matrix, t tetris.Tetrimino) []Placement {
-	var placements []Placement
-	width := len(mat[0])
+	var (
+		placementsC = make(chan []Placement, t.RotationCount())
+		width       = len(mat[0])
+		wg          sync.WaitGroup
+	)
 
 	for rot := 0; rot < t.RotationCount(); rot++ {
-		tCopy := *t.DeepCopy()
-		for i := 0; i < rot; i++ {
-			_ = tCopy.Rotate(mat, true)
-		}
+		rot := rot
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 
-		for x := 0; x <= width-len(tCopy.Cells[0]); x++ {
-			y := 0
-			for mat.CanPlace(tCopy.Cells, x, y+1) {
-				y++
+			tCopy := *t.DeepCopy()
+			for i := 0; i < rot; i++ {
+				_ = tCopy.Rotate(mat, true)
 			}
-			if mat.CanPlace(tCopy.Cells, x, y) {
-				placed := *tCopy.DeepCopy()
-				placed.Position = tetris.Coordinate{X: x, Y: y}
-				matCopy := mat.DeepCopy()
-				_ = matCopy.AddTetrimino(&placed)
-				score := matCopy.EvaluatePlacementScore()
-				placements = append(placements, Placement{
-					X: x, Y: y, Rotation: rot, Score: score,
-				})
+
+			var results []Placement
+			for x := 0; x <= width-len(tCopy.Cells[0]); x++ {
+				y := 0
+				for mat.CanPlace(tCopy.Cells, x, y+1) {
+					y++
+				}
+				if mat.CanPlace(tCopy.Cells, x, y) {
+					placed := *tCopy.DeepCopy()
+					placed.Position = tetris.Coordinate{X: x, Y: y}
+					matCopy := mat.DeepCopy()
+					_ = matCopy.AddTetrimino(&placed)
+					score := matCopy.EvaluatePlacementScore()
+					results = append(results, Placement{
+						X: x, Y: y, Rotation: rot, Score: score,
+					})
+				}
 			}
-		}
+			placementsC <- results
+		}()
 	}
 
-	return placements
+	go func() {
+		wg.Wait()
+		close(placementsC)
+	}()
+
+	var allPlacements []Placement
+	for placements := range placementsC {
+		allPlacements = append(allPlacements, placements...)
+	}
+
+	return allPlacements
 }
 
 // FindBestPlacementSequence recursively evaluates a sequence of Tetriminos.
