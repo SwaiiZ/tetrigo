@@ -315,45 +315,34 @@ func (m *AIModel) playingKeyMsgUpdate(msg tea.KeyMsg) (*AIModel, tea.Cmd) {
 
 // FindBestPlacement explores all valid placements for a tetrimino on the matrix.
 func (m *AIModel) FindBestPlacement(mat tetris.Matrix, t tetris.Tetrimino) []Placement {
-	var (
-		placementsC = make(chan []Placement, t.RotationCount())
-		width       = len(mat[0])
-	)
+	var placements []Placement
+	width := len(mat[0])
 
 	for rot := 0; rot < t.RotationCount(); rot++ {
-		rot := rot
-		go func() {
-			tCopy := *t.DeepCopy()
-			for i := 0; i < rot; i++ {
-				_ = tCopy.Rotate(mat, true)
-			}
+		tCopy := *t.DeepCopy()
+		for i := 0; i < rot; i++ {
+			_ = tCopy.Rotate(mat, true)
+		}
 
-			var results []Placement
-			for x := 0; x <= width-len(tCopy.Cells[0]); x++ {
-				y := 0
-				for mat.CanPlace(tCopy.Cells, x, y+1) {
-					y++
-				}
-				if mat.CanPlace(tCopy.Cells, x, y) {
-					placed := *tCopy.DeepCopy()
-					placed.Position = tetris.Coordinate{X: x, Y: y}
-					matCopy := mat.DeepCopy()
-					_ = matCopy.AddTetrimino(&placed)
-					score := matCopy.EvaluatePlacementScore()
-					results = append(results, Placement{
-						X: x, Y: y, Rotation: rot, Score: score,
-					})
-				}
+		for x := 0; x <= width-len(tCopy.Cells[0]); x++ {
+			y := 0
+			for mat.CanPlace(tCopy.Cells, x, y+1) {
+				y++
 			}
-			placementsC <- results
-		}()
+			if mat.CanPlace(tCopy.Cells, x, y) {
+				placed := *tCopy.DeepCopy()
+				placed.Position = tetris.Coordinate{X: x, Y: y}
+				matCopy := mat.DeepCopy()
+				_ = matCopy.AddTetrimino(&placed)
+				score := matCopy.EvaluatePlacementScore()
+				placements = append(placements, Placement{
+					X: x, Y: y, Rotation: rot, Score: score,
+				})
+			}
+		}
 	}
 
-	var allPlacements []Placement
-	for i := 0; i < t.RotationCount(); i++ {
-		allPlacements = append(allPlacements, <-placementsC...)
-	}
-	return allPlacements
+	return placements
 }
 
 // FindBestPlacementSequence recursively evaluates a sequence of Tetriminos.
@@ -399,7 +388,7 @@ func (m *AIModel) fallStopwatchTick() tea.Cmd {
 
 	if m.plannedMove == nil {
 		pieces := append([]tetris.Tetrimino{*current}, next...)
-		sequence, _ := m.FindBestPlacementSequence(matrix, pieces, 4)
+		sequence, _ := m.FindBestPlacementSequence(matrix, pieces, 2)
 		if len(sequence) == 0 {
 			return m.triggerGameOver()
 		}
