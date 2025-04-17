@@ -66,6 +66,17 @@ func (m *Matrix) GetSkyline() int {
 	return len(*m) - 20
 }
 
+func (m *Matrix) IsOverfilled() bool {
+	for y := 0; y < m.GetSkyline(); y++ {
+		for x := 0; x < len((*m)[0]); x++ {
+			if (*m)[y][x] != 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (m *Matrix) EvaluatePlacementScore() float64 {
 	const (
 		weightLinesCleared     = -0.1915
