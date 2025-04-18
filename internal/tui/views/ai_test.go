@@ -38,8 +38,10 @@ func BenchmarkFindBestPlacement(b *testing.B) {
 		// Rotate through matrix/tetrimino scenarios
 		matrix := matrices[i%len(matrices)]
 		tet := tetriminos[i%len(tetriminos)]
+		tet1 := tetriminos[(i+1)%len(tetriminos)]
+		tet2 := tetriminos[(i+2)%len(tetriminos)]
 		tet.Position = tetris.Coordinate{X: 0, Y: 0}
 
-		model.FindBestPlacement(matrix, tet)
+		model.FindBestPlacementSequence(matrix, []tetris.Tetrimino{tet, tet1, tet2}, 2)
 	}
 }
