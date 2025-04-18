@@ -65,7 +65,8 @@ Dans un fichier ***ai_test.go*** dans ***internal/tui/views***
             tet1 := tetriminos[(i+1)%len(tetriminos)]
             tet2 := tetriminos[(i+2)%len(tetriminos)]
             tet.Position = tetris.Coordinate{X: 0, Y: 0}
-    
+            // FindBestPlacement est pour les versions sans sequence
+            // model.FindBestPlacement(matrix,tet)
             model.FindBestPlacementSequence(matrix,[]tetris.Tetrimino{ tet,tet1,tet2},2)
         }
     }
