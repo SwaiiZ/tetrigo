@@ -314,26 +314,27 @@ func (m *AIModel) playingKeyMsgUpdate(msg tea.KeyMsg) (*AIModel, tea.Cmd) {
 	return m, nil
 }
 
-// FindBestPlacement explores all valid placements for a tetrimino on the matrix using goroutines and sync.WaitGroup for performance.
+// FindBestPlacement explores all valid placements for a tetrimino on the matrix using goroutines and waitgroups.
 func (m *AIModel) FindBestPlacement(mat tetris.Matrix, t tetris.Tetrimino) []Placement {
 	var (
-		placementsC = make(chan []Placement, t.RotationCount())
-		width       = len(mat[0])
-		wg          sync.WaitGroup
+		placements []Placement
+		width      = len(mat[0])
+		mutex      sync.Mutex
+		wg         sync.WaitGroup
 	)
 
-	for rot := 0; rot < t.RotationCount(); rot++ {
+	rc := t.RotationCount()
+	for rot := 0; rot < rc; rot++ {
 		rot := rot
+		tCopy := *t.DeepCopy()
+		for i := 0; i < rot; i++ {
+			_ = tCopy.Rotate(mat, true)
+		}
+
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-
-			tCopy := *t.DeepCopy()
-			for i := 0; i < rot; i++ {
-				_ = tCopy.Rotate(mat, true)
-			}
-
-			var results []Placement
+			var localPlacements []Placement
 			for x := 0; x <= width-len(tCopy.Cells[0]); x++ {
 				y := 0
 				for mat.CanPlace(tCopy.Cells, x, y+1) {
@@ -345,43 +346,36 @@ func (m *AIModel) FindBestPlacement(mat tetris.Matrix, t tetris.Tetrimino) []Pla
 					matCopy := mat.DeepCopy()
 					_ = matCopy.AddTetrimino(&placed)
 					score := matCopy.EvaluatePlacementScore()
-					results = append(results, Placement{
+					localPlacements = append(localPlacements, Placement{
 						X: x, Y: y, Rotation: rot, Score: score,
 					})
 				}
 			}
-			placementsC <- results
+			mutex.Lock()
+			placements = append(placements, localPlacements...)
+			mutex.Unlock()
 		}()
 	}
 
-	go func() {
-		wg.Wait()
-		close(placementsC)
-	}()
-
-	var allPlacements []Placement
-	for placements := range placementsC {
-		allPlacements = append(allPlacements, placements...)
-	}
-
-	return allPlacements
+	wg.Wait()
+	return placements
 }
 
-// FindBestPlacementSequence recursively evaluates a sequence of Tetriminos.
+// FindBestPlacementSequence recursively evaluates a sequence of Tetriminos using goroutines for the first layer.
 func (m *AIModel) FindBestPlacementSequence(mat tetris.Matrix, pieces []tetris.Tetrimino, depth int) ([]Placement, float64) {
-	if len(pieces) == 0 || depth == 0 {
+	if depth == 0 || len(pieces) == 0 {
 		return nil, 0
 	}
 
 	first := pieces[0]
 	rest := pieces[1:]
-
 	candidates := m.FindBestPlacement(mat, first)
+
 	var (
-		mu        sync.Mutex
-		wg        sync.WaitGroup
 		bestScore = math.Inf(-1)
 		bestSeq   []Placement
+		mutex     sync.Mutex
+		wg        sync.WaitGroup
 	)
 
 	for _, move := range candidates {
@@ -389,7 +383,6 @@ func (m *AIModel) FindBestPlacementSequence(mat tetris.Matrix, pieces []tetris.T
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-
 			matCopy := mat.DeepCopy()
 			tCopy := first.DeepCopy()
 			tCopy.Position = tetris.Coordinate{X: move.X, Y: move.Y}
@@ -401,12 +394,12 @@ func (m *AIModel) FindBestPlacementSequence(mat tetris.Matrix, pieces []tetris.T
 			seq, score := m.FindBestPlacementSequence(*matCopy, rest, depth-1)
 			total := move.Score + score
 
-			mu.Lock()
+			mutex.Lock()
 			if total > bestScore {
 				bestScore = total
 				bestSeq = append([]Placement{move}, seq...)
 			}
-			mu.Unlock()
+			mutex.Unlock()
 		}()
 	}
 
